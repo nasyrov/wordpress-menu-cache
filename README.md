@@ -6,6 +6,8 @@
 
 WordPress mu-plugin for a faster `wp_nav_menu`.
 
+*NOTICE!* Please read carefully the code and understand how it works before you roll it on production. It uses [transient API](https://codex.wordpress.org/Transients_API) and generates the cache key for every page so a menu can keep track of an active state. Make sure you use Memcache or Redis as an object cache otherwise it could bloat your `wp_options` table.
+
 ## Requirements
 
 Make sure all dependencies have been installed before moving on:
