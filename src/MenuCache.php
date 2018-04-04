@@ -7,18 +7,18 @@ use stdClass;
 class MenuCache
 {
     /**
-     * The cached menu keys.
+     * The cache group pattern.
      *
-     * @var array
+     * @var string
      */
-    protected $keys;
+    const GROUP = 'menu-cache-%d-keys';
 
     /**
-     * The cached menu timestamp.
+     * The cache key pattern.
      *
-     * @var int
+     * @var string
      */
-    protected $timestamp;
+    const KEY = 'menu-cache-%d-%s';
 
     /**
      * Bootstrap the plugin.
@@ -29,9 +29,10 @@ class MenuCache
     {
         $self = new static;
 
-        add_filter('pre_wp_nav_menu', [$self, 'get'], 10, 2);
-        add_filter('wp_nav_menu', [$self, 'put'], 10, 2);
+        add_filter('pre_wp_nav_menu', [$self, 'get'], 20, 2);
+        add_filter('wp_nav_menu', [$self, 'put'], 20, 2);
         add_action('wp_update_nav_menu', [$self, 'flush']);
+        add_action('wp_delete_nav_menu', [$self, 'flush']);
     }
 
     /**
@@ -44,15 +45,38 @@ class MenuCache
      */
     public function get($output, $args)
     {
-        if (empty($args->menu)) {
-            return $output;
+        // Get the nav menu based on the requested menu
+        $menu = wp_get_nav_menu_object($args->menu);
+
+        // Get the nav menu based on the theme_location
+        if (!$menu && $args->theme_location) {
+            $locations = get_nav_menu_locations();
+            if (isset($locations[$args->theme_location])) {
+                $menu = wp_get_nav_menu_object($locations[$args->theme_location]);
+            }
         }
 
-        $this->keys[] = $key = $this->key($args);
+        // Get the first menu that has items
+        if (!$menu && !$args->theme_location) {
+            foreach (wp_get_nav_menus() as $_menu) {
+                if (wp_get_nav_menu_items($_menu->term_id, ['update_post_term_cache' => false])) {
+                    $menu = $_menu;
+                    break;
+                }
+            }
+        }
 
-        $data = get_transient($key);
-        if (is_array($data) && $data['timestamp'] >= $this->timestamp()) {
-            $output = $data['html'];
+        // Set the menu
+        if (empty($args->menu)) {
+            $args->menu = $menu;
+        }
+
+        // We don't actually need the cache group of this menu,
+        // but we need to make sure the cache is not out of sync
+        if (false !== get_transient($this->group($args))) {
+            if (false !== ($data = get_transient($this->key($args)))) {
+                $output = $data;
+            }
         }
 
         return $output;
@@ -68,17 +92,21 @@ class MenuCache
      */
     public function put($output, $args)
     {
+        // Generate the cache key
         $key = $this->key($args);
-        if (!in_array($key, $this->keys)) {
-            return $output;
+
+        // Store the menu output
+        // Let the cache expire randomly
+        $expiration = mt_rand(50, 60) * MINUTE_IN_SECONDS;
+        set_transient($key, $output, $expiration);
+
+        // Store the cached menu key
+        $group = $this->group($args);
+        $keys  = get_transient($group) ?: [];
+        if (!isset($keys[$key])) {
+            $keys[$key] = true;
         }
-
-        $data = [
-            'html'      => $output,
-            'timestamp' => time(),
-        ];
-
-        set_transient($key, $data, 3600);
+        set_transient($group, $keys);
 
         return $output;
     }
@@ -86,15 +114,38 @@ class MenuCache
     /**
      * Flush the menu cache.
      *
+     * @param int $menu_id
+     *
      * @return void
      */
-    public function flush()
+    public function flush($menu_id)
     {
-        update_option('menu-cache-timestamp', time());
+        $group = sprintf(static::GROUP, $menu_id);
+
+        // Flush the group
+        $keys = get_transient($group) ?: [];
+        delete_transient($group);
+
+        // Flush the keys
+        foreach ($keys as $key) {
+            delete_transient($key);
+        }
     }
 
     /**
-     * Generate the cache key.
+     * Generate the group key.
+     *
+     * @param stdClass $args
+     *
+     * @return string
+     */
+    protected function group($args)
+    {
+        return sprintf(static::GROUP, $args->menu->term_id);
+    }
+
+    /**
+     * Generate the key.
      *
      * @param stdClass $args
      *
@@ -102,18 +153,8 @@ class MenuCache
      */
     protected function key($args)
     {
-        $args = (array)$args;
-        unset($args['menu']);
+        global $wp_query;
 
-        return sprintf('menu-cache-%s', md5(json_encode($args)));
-    }
-
-    protected function timestamp()
-    {
-        if (is_null($this->timestamp)) {
-            $this->timestamp = get_option('menu-cache-timestamp', 0);
-        }
-
-        return $this->timestamp;
+        return sprintf(static::KEY, $args->menu->term_id, md5(json_encode($args) . $wp_query->query_vars_hash));
     }
 }
