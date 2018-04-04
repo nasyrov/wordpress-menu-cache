@@ -8,7 +8,11 @@
  * Version:     0.0.0
  */
 
+use Nasyrov\WordPress\MenuCache\MenuCache;
+
 // Require Composer auto loader if installed on it's own
 if (file_exists($composer = __DIR__ . '/vendor/autoload.php')) {
     require_once $composer;
 }
+
+MenuCache::boot();
