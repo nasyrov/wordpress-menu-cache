@@ -25,6 +25,11 @@
     "require-dev": {
         "squizlabs/php_codesniffer": "~3.2"
     },
+    "autoload": {
+        "psr-4": {
+            "Nasyrov\\WordPress\\CustomPostTypes\\": "src/"
+        }
+    },
     "scripts": {
         "lint": "phpcs -p --standard=psr2 --ignore=vendor ."
     },
