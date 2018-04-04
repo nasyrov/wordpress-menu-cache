@@ -30,7 +30,7 @@ class MenuCache
         $self = new static;
 
         add_filter('pre_wp_nav_menu', [$self, 'get'], 20, 2);
-        add_filter('wp_nav_menu', [$self, 'put'], 20, 2);
+        add_filter('wp_nav_menu', [$self, 'store'], 20, 2);
         add_action('wp_update_nav_menu', [$self, 'flush']);
         add_action('wp_delete_nav_menu', [$self, 'flush']);
     }
@@ -38,7 +38,7 @@ class MenuCache
     /**
      * Get the menu cache.
      *
-     * @param string   $output
+     * @param string $output
      * @param stdClass $args
      *
      * @return string
@@ -73,7 +73,7 @@ class MenuCache
 
         // We don't actually need the cache group of this menu,
         // but we need to make sure the cache is not out of sync
-        if (false !== get_transient($this->group($args))) {
+        if (false !== get_transient($this->groupKey($args))) {
             if (false !== ($data = get_transient($this->key($args)))) {
                 $output = $data;
             }
@@ -83,30 +83,32 @@ class MenuCache
     }
 
     /**
-     * Put the menu cache.
+     * Store the menu cache.
      *
-     * @param string   $output
+     * @param string $output
      * @param stdClass $args
      *
      * @return string
      */
-    public function put($output, $args)
+    public function store($output, $args)
     {
-        // Generate the cache key
+        // We'll cache the menu output and let it expire randomly
+        // so we don't regenerate all the menus on the same request
         $key = $this->key($args);
 
-        // Store the menu output
-        // Let the cache expire randomly
-        $expiration = mt_rand(50, 60) * MINUTE_IN_SECONDS;
-        set_transient($key, $output, $expiration);
+        set_transient($key, $output, mt_rand(50, 60) * MINUTE_IN_SECONDS);
 
-        // Store the cached menu key
-        $group = $this->group($args);
-        $keys  = get_transient($group) ?: [];
+        // We'll also store the menu cache key
+        // so we can flush it easily
+        $groupKey = $this->groupKey($args);
+
+        $keys = get_transient($groupKey) ?: [];
+
         if (!isset($keys[$key])) {
             $keys[$key] = true;
         }
-        set_transient($group, $keys);
+
+        set_transient($groupKey, $keys);
 
         return $output;
     }
@@ -114,19 +116,19 @@ class MenuCache
     /**
      * Flush the menu cache.
      *
-     * @param int $menu_id
+     * @param int $menuId
      *
      * @return void
      */
-    public function flush($menu_id)
+    public function flush($menuId)
     {
-        $group = sprintf(static::GROUP, $menu_id);
+        $groupKey = sprintf(static::GROUP, $menuId);
 
-        // Flush the group
-        $keys = get_transient($group) ?: [];
-        delete_transient($group);
+        // Flush the group cache
+        $keys = get_transient($groupKey) ?: [];
+        delete_transient($groupKey);
 
-        // Flush the keys
+        // Flush the keys cache
         foreach ($keys as $key) {
             delete_transient($key);
         }
@@ -139,7 +141,7 @@ class MenuCache
      *
      * @return string
      */
-    protected function group($args)
+    protected function groupKey($args)
     {
         return sprintf(static::GROUP, $args->menu->term_id);
     }
