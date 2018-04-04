@@ -5,7 +5,7 @@
  * Description: WordPress mu-plugin for a faster wp_nav_menu.
  * Author:      Evgenii Nasyrov
  * Author URI:  mailto:inasyrov@ya.ru
- * Version:     0.0.0
+ * Version:     1.0.0
  */
 
 use Nasyrov\WordPress\MenuCache\MenuCache;
